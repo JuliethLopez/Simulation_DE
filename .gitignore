@@ -8,3 +8,5 @@
 # Ignore any file or folder named 'figura'
 **/figures/
 **/figures/*
+**/figures_metacells/
+**/figures_metacells/*
