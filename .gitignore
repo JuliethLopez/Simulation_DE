@@ -1,7 +1,10 @@
-# Ignore RDS and CSV files
+# Ignore big files
 *.rds
 *.csv
-
+*.xlsx
+*.pdf
+*.jpg
+*.png
 # Ignore any file or folder named 'figura'
 **/figures/
 **/figures/*
