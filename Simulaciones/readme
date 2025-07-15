@@ -1,0 +1,22 @@
+Podemos evluar la dos simulaciones o podemos ver si generamos otras,
+en el codigo se puede generar nuevas simulaciones. Quedo pendiente.  
+
+La simulación 1 me da algo asi :
+> print(metricas_findallmarkers_df)
+             Test precision     recall  f1_score  accuracy       fdr
+Wilcoxon Wilcoxon 0.4446160 0.60156658 0.5113182 0.8406657 0.5553840
+T-Test     T-Test 0.6846154 0.46475196 0.5536547 0.8959391 0.3153846
+DESeq2     DESeq2 0.3830275 0.08720627 0.1420672 0.8535328 0.6169725
+MAST         MAST 0.5234619 0.52428198 0.5238716 0.8685632 0.4765381
+
+La simulacion_2 algo asi: 
+> print(metricas_findallmarkers_df)
+             Test precision     recall   f1_score  accuracy       fdr
+Wilcoxon Wilcoxon 0.5172779 0.67634855 0.58621379 0.8632281 0.4827221
+T-Test     T-Test 0.7627877 0.55002305 0.63916421 0.9105281 0.2372123
+DESeq2     DESeq2 0.8014706 0.05025357 0.09457701 0.8608759 0.1985294
+MAST         MAST 0.7443609 0.59336100 0.66033864 0.9121433 0.2556391
+
+
+
+

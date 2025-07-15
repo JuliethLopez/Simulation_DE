@@ -1,0 +1,215 @@
+## Set environment - Change for your own directory
+basedir <- '/lustre/scratch123/hgi/mdt1/projects/jaguar_analysis/analysis/jl38'
+setwd("/lustre/scratch123/hgi/mdt1/projects/jaguar_analysis/analysis/jl38/play_data_europe")
+outdir <- '/lustre/scratch123/hgi/mdt1/projects/jaguar_analysis/analysis/jl38/play_data_europe/output_differential_expression'
+
+## Libraries
+library(Seurat)
+library(SeuratDisk)
+library(dplyr)
+library(ggplot2)
+library(devtools)
+library(dplyr)
+library(ggVennDiagram)
+library(readr)
+
+## Data
+data_norm_harmony = LoadH5Seurat("data_norm_harmony.h5Seurat")
+data_norm_harmony@assays #RNA, log1p_cp10k
+data_norm_harmony@reductions #harmony, pca, umap, umap.harmony
+
+head(data_norm_harmony$seurat_clusters) #contain all groups calculated
+head(data_norm_harmony$log1p_cp10k_snn_res.0.1) #contain the groups selected in Idents
+
+#azimuth levels
+levels(data_norm_harmony$`Azimuth:L0_predicted.celltype.l2`) #5 labels
+levels(data_norm_harmony$`Azimuth:L1_predicted.celltype.l2`) #8 labels
+levels(data_norm_harmony$`Azimuth:predicted.celltype.l2`) #26 labels
+
+# Drop levels is needed due to platelets and eyrth were deleted based on azimuth annotation
+data_norm_harmony$`Celltypist:Immune_All_High:majority_voting` <- droplevels(data_norm_harmony$`Celltypist:Immune_All_High:majority_voting`)
+data_norm_harmony$`Celltypist:Immune_All_High:predicted_labels` <- droplevels(data_norm_harmony$`Celltypist:Immune_All_High:predicted_labels`)
+#celltype levels
+levels(data_norm_harmony$`Celltypist:Immune_All_High:majority_voting`) #9 labels
+levels(data_norm_harmony$`Celltypist:Immune_All_High:predicted_labels`) #14 labels
+
+## Parameters
+# ident.1: the number of the group I want to identify.
+# grouping.var: grouping by variable.
+# ident.2: if the comparison is in pairs, put the other number here.
+## If it is not set then it is assumed that it is against all groups.
+
+############################################
+#1. Compare annotations: celltypist and azimuth
+############################################
+data_norm_harmony
+
+#labels relation between celltypist and azimuth annotation
+cell_mapping <- list(
+  "B cells"                 = "B",
+  "Plasma cells"            = "B",
+  "DC"                      = "DC",
+  "pDC"                     = "DC",
+  "HSC/MPP"                 = "HSPC",
+  "ILC"                     = "NK",
+  "Megakaryocytes/platelets"= "Platelet",
+  "Monocytes"               = "Mono",
+  "T cells"                 = "T cells",
+  "Unknown"                 = "Unknown")
+
+azimuth_annotation=data_norm_harmony$`Azimuth:L1_predicted.celltype.l2`
+celltypist_annotation=data_norm_harmony$`Celltypist:Immune_All_High:majority_voting`
+levels(azimuth_annotation)[c(2,3,8)] = "T cells"
+levels(celltypist_annotation) = unlist(cell_mapping[levels(data_norm_harmony$`Celltypist:Immune_All_High:majority_voting`)])
+
+#table to see the common annotation between both programs used
+#here is possible to see the differences between azimuth and celltypist annotation
+#from now the analysis will take into account azimuth annotation
+table(celltypist_annotation,azimuth_annotation)
+
+############################################
+#2. Diferential expression
+############################################
+# The differential expression will be focused on azimuth annotation
+# The notebook used to run Rscript faster, as a job, was diff_expression_sh.R
+# Each method was runned independently so it was possible to save times and space tooked by each one
+Idents(data_norm_harmony) = "Azimuth:L1_predicted.celltype.l2"
+levels(data_norm_harmony$`Azimuth:L1_predicted.celltype.l2`)
+table(data_norm_harmony$`Azimuth:L1_predicted.celltype.l2`)
+
+# Wilcoxon azimuth
+# if is runned in Rstudio (TIME = 2 hours)
+# if is runned as a job (TIME = around 1 minute)
+# see more info in log.145132.out
+Idents(data_norm_harmony) <- "Azimuth:L1_predicted.celltype.l2"
+markers_azimuth_L1 <- FindAllMarkers(data_norm_harmony,test.use = "wilcox", assay="log1p_cp10k")
+write.csv(markers_azimuth_L1, file = paste0(outdir,"/markers_wilcox_azimuth_L1_l2.csv"), row.names = TRUE)
+
+# T-test azimuth
+# see more info in log.147367.out
+Idents(data_norm_harmony) <- "Azimuth:L1_predicted.celltype.l2"
+markers_azimuth_L1 <- FindAllMarkers(data_norm_harmony,test.use = "t", assay="log1p_cp10k")
+write.csv(markers_azimuth_L1, file = paste0(outdir,"/markers_ttest_azimuth_L1_l2.csv"), row.names = TRUE)
+
+# MAST
+# see more info in log.708087.err
+Idents(data_norm_harmony) <- "Azimuth:L1_predicted.celltype.l2"
+markers_MAST <- FindAllMarkers(object = data_norm_harmony, test.use = "MAST")
+markers_MAST <- read.csv(paste0(outdir,"/markers_MAST_azimuth_L1_l2.csv"))
+
+tail(markers_MAST)
+dim(markers_MAST)
+max(markers_MAST$p_val)
+
+############################################
+#3. Diferential expression with pseudobulk
+############################################
+
+# Deseq2
+# see more info in log.387077.err
+data_norm_harmony_bulk <- AggregateExpression(data_norm_harmony, assays="RNA", return.seurat = T, group.by = c("donor_id","Azimuth:L1_predicted.celltype.l2"))
+dim(data_norm_harmony_bulk) #36601    39
+dim(data_norm_harmony) #36601 11492
+unique(data_norm_harmony_bulk$donor_id)
+
+#some donors do not have Eryth, for example donor 0
+Cells(data_norm_harmony_bulk)
+table(data_norm_harmony_bulk$`Azimuth:L1_predicted.celltype.l2`)
+
+Idents(data_norm_harmony_bulk) <- "Azimuth:L1_predicted.celltype.l2"
+markers_bulk <- FindAllMarkers(object = data_norm_harmony_bulk, test.use = "DESeq2")
+head(markers_bulk, n = 15)
+write.csv(markers_bulk, file = paste0(outdir,"/markers_DESEQ_azimuth_L1_l2.csv"), row.names = TRUE)
+
+############################################
+#3. Compare the DE methods
+############################################
+
+# DEGs datasets
+markers_azimuth_wilcox_L1 <- read.csv(paste0(outdir,"/markers_wilcox_azimuth_L1_l2.csv"))
+markers_azimuth_t_L1 <- read.csv(paste0(outdir,"/markers_ttest_azimuth_L1_l2.csv"))
+markers_bulk <- read.csv(paste0(outdir,"/markers_DESEQ_azimuth_L1_l2.csv"))
+markers_mast <- read.csv(paste0(outdir,"/markers_MAST_azimuth_L1_l2.csv"))
+
+# Associate gene symbols and calculate pct_differences.
+# Here pct_differences is the percentage of cells in the grop minus
+# percentage of cells in all the other groups. Is espected to see a possitive marker
+# for certain cell with higher percentage to that cell group vs others.
+adata_var_metadata <- read_csv("adata_var_metadata.csv")
+colnames(adata_var_metadata)[1] = "gene"
+
+markers_azimuth_wilcox_L1 = markers_azimuth_wilcox_L1 %>%
+  left_join(adata_var_metadata, by= "gene") %>%
+  mutate(pct_difference = markers_azimuth_wilcox_L1$pct.1-markers_azimuth_wilcox_L1$pct.2) %>%
+  select(colnames(markers_azimuth_wilcox_L1), gene_symbols, pct_difference)
+write.csv(markers_azimuth_wilcox_L1, file = paste0(outdir,"/markers_wilcox_azimuth_L1_l2.csv"), row.names = TRUE)
+
+markers_azimuth_t_L1 = markers_azimuth_t_L1 %>%
+  left_join(adata_var_metadata, by= "gene") %>%
+  mutate(pct_difference = markers_azimuth_t_L1$pct.1-markers_azimuth_t_L1$pct.2) %>%
+  select(colnames(markers_azimuth_t_L1), gene_symbols, pct_difference)
+write.csv(markers_azimuth_t_L1, file = paste0(outdir,"/markers_ttest_azimuth_L1_l2.csv"), row.names = TRUE)
+
+markers_bulk = markers_bulk %>%
+  left_join(adata_var_metadata, by= "gene") %>%
+  mutate(pct_difference = markers_bulk$pct.1-markers_bulk$pct.2) %>%
+  select(colnames(markers_bulk), gene_symbols, pct_difference)
+write.csv(markers_bulk, file = paste0(outdir,"/markers_DESEQ_azimuth_L1_l2.csv"), row.names = TRUE)
+
+markers_mast = markers_mast %>%
+  left_join(adata_var_metadata, by= "gene") %>%
+  mutate(pct_difference = markers_mast$pct.1-markers_mast$pct.2) %>%
+  select(colnames(markers_mast), gene_symbols, pct_difference)
+write.csv(markers_mast, file = paste0(outdir,"/markers_MAST_azimuth_L1_l2.csv"), row.names = TRUE)
+
+# Summary metrics
+summary(markers_azimuth_wilcox_L1$p_val) # max 0.0099
+#     Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
+#0.000e+00 0.000e+00 8.000e-09 6.906e-04 1.398e-04 9.999e-03 
+max(markers_azimuth_wilcox_L1$p_val_adj) #1
+summary(markers_azimuth_wilcox_L1$avg_log2FC)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-10.5818  -1.1974  -0.1937  -0.1095   1.0189  14.7899 
+summary(markers_azimuth_wilcox_L1$pct_difference)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-0.70500 -0.04200 -0.00800  0.02265  0.05400  1.00000 
+
+# filter by p-value adjustes < 0.05 and fold change positive and higher than 1
+markers_filter_azimuth_t_L1 = subset(markers_azimuth_t_L1, p_val_adj<0.05 & avg_log2FC>1 & pct_difference>0.5)
+markers_filter_azimuth_willcox_L1 = subset(markers_azimuth_wilcox_L1, p_val_adj<0.05 & avg_log2FC>1 & pct_difference>0.5)
+markers_filter_bulk = subset(markers_bulk, p_val_adj<0.05 & avg_log2FC>1 & pct_difference>0.5)
+markers_filter_mast = subset(markers_mast, p_val_adj<0.05 & avg_log2FC>1 & pct_difference>0.5)
+nrow(markers_filter_azimuth_t_L1)
+nrow(markers_filter_azimuth_willcox_L1)
+nrow(markers_filter_bulk)
+nrow(markers_filter_mast)
+
+# plot Venn Diagram
+markers_joined <- list(t_test = markers_filter_azimuth_t_L1$gene, wilcox_test = markers_filter_azimuth_willcox_L1$gene, DESEQ2 = markers_filter_bulk$gene, MAST = markers_filter_mast$gene)
+fig <- ggVennDiagram(markers_joined, main="a") + ggtitle("Differential expressed genes Pval_adj<0.5, LFC>1 and pct_diff>0.5")
+ggsave(paste0(outdir,"/Venn_Diagram_DEGs_Pval_adj.png"), fig, dpi = 300)
+
+# Filter by p-value < 0.05 and fold change positive and higher than 1
+markers_filter_azimuth_t_L1 = subset(markers_azimuth_t_L1, p_val<0.05 & avg_log2FC>1)
+markers_filter_azimuth_willcox_L1 = subset(markers_azimuth_wilcox_L1, p_val<0.05 & avg_log2FC>1)
+markers_filter_bulk = subset(markers_bulk, p_val<0.05 & avg_log2FC>1)
+markers_filter_mast = subset(markers_mast, p_val<0.05 & avg_log2FC>1)
+
+# plot Venn Diagram
+markers_joined <- list(t_test = markers_filter_azimuth_t_L1$gene, wilcox_test = markers_filter_azimuth_willcox_L1$gene, DESEQ2 = markers_filter_bulk$gene, MAST = markers_filter_mast$gene)
+fig <- ggVennDiagram(markers_joined, main="a") + ggtitle("Differential expressed genes Pval<0.5, LFC>1 and pct_diff>0.5")
+ggsave(paste0(outdir,"/Venn_Diagram_DEGs_Pval.png"), fig, dpi = 300)
+
+############################################
+#4. Search for DEGs between CD4T and CD8T
+############################################
+
+markers_cluster <- FindMarkers(data_norm_harmony, ident.1 = "CD4T", ident.2 = "CD8T",
+                               assay= "log1p_cp10k", grouping.var = "donor_id")
+
+markers_cluster = markers_cluster %>%
+  mutate(gene = rownames(markers_cluster)) %>%
+  left_join(adata_var_metadata, by= "gene") %>%
+  mutate(pct_difference = markers_cluster$pct.1-markers_cluster$pct.2) %>%
+  select(colnames(markers_cluster), gene, gene_symbols, pct_difference)
+write.csv(markers_cluster, file = paste0(outdir,"/markers_CD4T_vs_CD8T.csv"), row.names = FALSE)
